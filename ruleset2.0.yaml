@@ -1,0 +1,65 @@
+modelVersion: 2.0
+
+docker-images:
+  - kube-helm: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/bob-py3kubehelmbuilder:latest
+ 
+properties:
+  - image-registry: armdocker.rnd.ericsson.se
+  - image-repopath: sandbox/photon
+  - docker-image-name: eric-ns-test-client
+  - image-full-name: ${image-registry}/${image-repopath}/${docker-image-name}
+  - docker-image-version: 3.0
+  - helm-chart: testsuite/charts/test-client
+  - helm-name: eric-ns-test-client
+
+env:
+  - PWD
+  - KUBECONFIG
+  - K8_NAMESPACE
+  - KUBECONFIG_FILE_NAME
+  - ARMDOCKER_CONFIG_FILE_NAME
+  - SLAVE
+
+rules:
+  clean:
+    - task: rm
+      cmd:
+        - git clean -xdff --exclude=.docker --exclude=.kube --exclude=dockerconfig.json --exclude=bob
+ 
+  build:
+    - task: docker-image-build
+      cmd: docker build ${env.PWD}
+        --file Dockerfile
+        --tag ${image-full-name}:${docker-image-version}
+
+  push:
+    - task: docker-image-push
+      cmd: docker push ${image-full-name}:${docker-image-version}
+    - task: precheck-pods-available
+      cmd: kubectl --kubeconfig ${env.PWD}/.kube/config get pod -n ${env.K8_NAMESPACE}
+
+  helm-install:
+    - task: pre-check-test-client
+      docker-image: kube-helm
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/config"
+        - "--volume ${env.PWD}/.kube/config:/tmp/config" 
+      cmd: ./script/pre_check_test_client.sh -n ${env.K8_NAMESPACE} -c ${helm-name}
+    - task: helm-install
+      docker-image: kube-helm
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/config"
+        - "--volume ${env.PWD}/.kube/config:/tmp/config" 
+      cmd: helm install --wait ${helm-name} ${helm-chart} --set image.tag=${docker-image-version} -n ${env.K8_NAMESPACE}      
+
+  testsuite-execution:
+    - task: testsuite-execution
+      cmd: ./script/test_execution_pybdd.sh -n ${env.K8_NAMESPACE} -k ${env.PWD}/.kube/config -v ${env.PWD}/nbitestsuite -p 10000 
+
+  helm-delete:
+    - task: helm-delete
+      docker-image: kube-helm
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/config"
+        - "--volume ${env.PWD}/.kube/config:/tmp/config"
+      cmd: helm delete ${helm-name} -n ${env.K8_NAMESPACE}

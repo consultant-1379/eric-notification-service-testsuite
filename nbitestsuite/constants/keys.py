@@ -1,0 +1,5 @@
+BASE_URL = 'base_url'
+TEST_CLIENT_URL = 'testclient_url'
+REQUEST_HEADERS = 'request_headers'
+K8S_CONFIG = 'k8s_config'
+K8S_NAMESPACE = 'k8s_namespace'
